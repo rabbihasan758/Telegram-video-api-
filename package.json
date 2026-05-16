@@ -1,6 +1,6 @@
 {
   "name": "telegram-video-api",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "engines": {
     "node": "18.x"
   },
@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "express": "^4.21.0",
-    "node-fetch": "^2.7.0"
+    "node-fetch": "^2.7.0",
+    "cors": "^2.8.5"
   }
 }
