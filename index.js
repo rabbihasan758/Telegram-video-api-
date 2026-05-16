@@ -1,5 +1,6 @@
 const express = require('express');
 const fetch = require('node-fetch');
+const cors = require('cors');  // <-- যোগ করা হয়েছে
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -7,9 +8,11 @@ const PORT = process.env.PORT || 3000;
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const CHANNEL_ID = process.env.CHANNEL_ID;
 
+// CORS middleware – সব অরিজিন থেকে রিকোয়েস্ট অনুমোদন
+app.use(cors());
+
 // ---------- প্রতিটি প্ল্যাটফর্মের জন্য পাবলিক API ব্যবহার করে ভিডিও URL আনা ----------
 async function getVideoUrl(url, platform) {
-  // সব API এন্ডপয়েন্ট আগের মতোই, এখন সার্ভার-সাইডে কল হবে (CORS ফ্রি)
   const apis = {
     tiktok: [
       { name: 'TikWM', url: `https://tikwm.com/api/?url=${encodeURIComponent(url)}`, field: 'data.play' },
@@ -45,14 +48,11 @@ async function getVideoUrl(url, platform) {
       const res = await fetch(api.url);
       const json = await res.json();
       let videoUrl = api.field.split('.').reduce((o, k) => o?.[k], json);
-      // কিছু API সরাসরি json?.url বা json?.video দিতে পারে
       if (!videoUrl) videoUrl = json?.url || json?.video || json?.video_url;
       if (videoUrl && typeof videoUrl === 'string' && videoUrl.startsWith('http')) {
         return videoUrl;
       }
-    } catch (e) {
-      // পরের API চেষ্টা করবে
-    }
+    } catch (e) {}
   }
   throw new Error(`${platform} video not found`);
 }
@@ -65,10 +65,8 @@ app.get('/api/download', async (req, res) => {
   }
 
   try {
-    // ১. পাবলিক API থেকে সরাসরি ভিডিও URL বের করি
     const videoUrl = await getVideoUrl(url, platform);
 
-    // ২. টেলিগ্রাম চ্যানেলে ভিডিও পাঠাই
     const sendRes = await fetch(
       `https://api.telegram.org/bot${BOT_TOKEN}/sendVideo`,
       {
@@ -86,7 +84,6 @@ app.get('/api/download', async (req, res) => {
 
     const fileId = sendData.result.video.file_id;
 
-    // ৩. সরাসরি ডাউনলোড লিংক তৈরি
     const fileRes = await fetch(
       `https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${fileId}`
     );
