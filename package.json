@@ -10,9 +10,6 @@
   "dependencies": {
     "express": "^4.21.0",
     "node-fetch": "^2.7.0",
-    "ytdl-core": "^4.11.5",
-    "instagram-get-url": "^1.0.0",
-    "fb-downloader": "^1.0.5",
-    "twitter-url-direct": "^1.0.1"
+    "play-dl": "^1.9.7"
   }
 }
