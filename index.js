@@ -1,9 +1,5 @@
 const express = require('express');
 const fetch = require('node-fetch');
-const ytdl = require('ytdl-core');
-const instagramGetUrl = require('instagram-url-direct');
-const fbDownload = require('fb-downloader');
-const twitterGetUrl = require('twitter-url-direct');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -11,48 +7,54 @@ const PORT = process.env.PORT || 3000;
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const CHANNEL_ID = process.env.CHANNEL_ID;
 
-// ---------- ভিডিও URL বের করার নির্ভরযোগ্য ফাংশন ----------
+// ---------- প্রতিটি প্ল্যাটফর্মের জন্য পাবলিক API ব্যবহার করে ভিডিও URL আনা ----------
 async function getVideoUrl(url, platform) {
-  switch (platform) {
-    case 'youtube': {
-      // প্রথম চেষ্টা ytdl-core
-      try {
-        const info = await ytdl.getInfo(url);
-        const format = ytdl.chooseFormat(info.formats, { quality: 'highestvideo' });
-        if (format?.url) return format.url;
-      } catch {}
-      // দ্বিতীয় চেষ্টা @distube/ytdl-core
-      try {
-        const distube = require('@distube/ytdl-core');
-        const info2 = await distube.getInfo(url);
-        const format2 = distube.chooseFormat(info2.formats, { quality: 'highestvideo' });
-        if (format2?.url) return format2.url;
-      } catch {}
-      throw new Error('YouTube video not found');
-    }
+  // সব API এন্ডপয়েন্ট আগের মতোই, এখন সার্ভার-সাইডে কল হবে (CORS ফ্রি)
+  const apis = {
+    tiktok: [
+      { name: 'TikWM', url: `https://tikwm.com/api/?url=${encodeURIComponent(url)}`, field: 'data.play' },
+      { name: 'TiklyDown', url: `https://api.tiklydown.eu.org/api/download?url=${encodeURIComponent(url)}`, field: 'video.noWatermark' },
+      { name: 'TikMate', url: `https://www.tikmate.app/api/?url=${encodeURIComponent(url)}`, field: 'video.noWatermark' }
+    ],
+    instagram: [
+      { name: 'IGDownloader', url: `https://api.igdownloader.app/api/v1/instagram/download?url=${encodeURIComponent(url)}`, field: 'url[0].url' },
+      { name: 'InstaSave', url: `https://instasave.io/api/v1/download?url=${encodeURIComponent(url)}`, field: 'video_url' },
+      { name: 'SnapInsta', url: `https://snapinsta.app/api/download?url=${encodeURIComponent(url)}`, field: 'video' }
+    ],
+    facebook: [
+      { name: 'FBDown', url: `https://fbdownloader.app/api/?url=${encodeURIComponent(url)}`, field: 'hd' },
+      { name: 'FBVideoAPI', url: `https://fb-video-downloader-api.vercel.app/api/download?url=${encodeURIComponent(url)}`, field: 'video' },
+      { name: 'FBDownloader', url: `https://fbdownloader.vercel.app/api/download?url=${encodeURIComponent(url)}`, field: 'video' }
+    ],
+    twitter: [
+      { name: 'TWDown', url: `https://twdown.net/api/download?url=${encodeURIComponent(url)}`, field: 'HD' },
+      { name: 'TwitterVid', url: `https://api.twittervideodownloader.com/api/download?url=${encodeURIComponent(url)}`, field: 'video_url' },
+      { name: 'TwitterDL', url: `https://twitter-video-downloader-api.vercel.app/api/download?url=${encodeURIComponent(url)}`, field: 'video' }
+    ],
+    youtube: [
+      { name: 'YtDlAPI', url: `https://ytdl-api.vercel.app/api/download?url=${encodeURIComponent(url)}`, field: 'url' },
+      { name: 'Y2Mate', url: `https://y2mate-api.vercel.app/api/convert?url=${encodeURIComponent(url)}`, field: 'url' },
+      { name: 'YouTubeMP4', url: `https://youtube-mp4.download/api?url=${encodeURIComponent(url)}`, field: 'url' }
+    ]
+  };
 
-    case 'instagram': {
-      const data = await instagramGetUrl(url);
-      if (data?.url_list && data.url_list.length > 0) return data.url_list[0];
-      throw new Error('Instagram video not found');
-    }
+  if (!apis[platform]) throw new Error('Unsupported platform');
 
-    case 'facebook': {
-      const data = await fbDownload(url);
-      const vid = data?.hd || data?.sd || data?.url;
-      if (vid) return vid;
-      throw new Error('Facebook video not found');
+  for (const api of apis[platform]) {
+    try {
+      const res = await fetch(api.url);
+      const json = await res.json();
+      let videoUrl = api.field.split('.').reduce((o, k) => o?.[k], json);
+      // কিছু API সরাসরি json?.url বা json?.video দিতে পারে
+      if (!videoUrl) videoUrl = json?.url || json?.video || json?.video_url;
+      if (videoUrl && typeof videoUrl === 'string' && videoUrl.startsWith('http')) {
+        return videoUrl;
+      }
+    } catch (e) {
+      // পরের API চেষ্টা করবে
     }
-
-    case 'twitter': {
-      const data = await twitterGetUrl(url);
-      if (data?.url) return data.url;
-      throw new Error('Twitter video not found');
-    }
-
-    default:
-      throw new Error('Unsupported platform');
   }
+  throw new Error(`${platform} video not found`);
 }
 
 // ---------- API এন্ডপয়েন্ট ----------
@@ -63,10 +65,10 @@ app.get('/api/download', async (req, res) => {
   }
 
   try {
-    // 1. প্ল্যাটফর্ম থেকে সরাসরি ভিডিও URL নিন
+    // ১. পাবলিক API থেকে সরাসরি ভিডিও URL বের করি
     const videoUrl = await getVideoUrl(url, platform);
 
-    // 2. টেলিগ্রাম চ্যানেলে ভিডিও পাঠান
+    // ২. টেলিগ্রাম চ্যানেলে ভিডিও পাঠাই
     const sendRes = await fetch(
       `https://api.telegram.org/bot${BOT_TOKEN}/sendVideo`,
       {
@@ -84,7 +86,7 @@ app.get('/api/download', async (req, res) => {
 
     const fileId = sendData.result.video.file_id;
 
-    // 3. সরাসরি ডাউনলোড লিংক তৈরি
+    // ৩. সরাসরি ডাউনলোড লিংক তৈরি
     const fileRes = await fetch(
       `https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${fileId}`
     );
@@ -100,7 +102,6 @@ app.get('/api/download', async (req, res) => {
   }
 });
 
-// রুট পাথ – যেন "Cannot GET /" না দেখায়
-app.get('/', (req, res) => res.send('Telegram Video API is running. Supports YouTube, Instagram, Facebook, Twitter.'));
+app.get('/', (req, res) => res.send('Telegram Video API is running (all platforms).'));
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
