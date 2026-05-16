@@ -1,6 +1,9 @@
 const express = require('express');
 const fetch = require('node-fetch');
-const play = require('play-dl');
+const ytdl = require('ytdl-core');
+const instagramGetUrl = require('instagram-url-direct');
+const fbDownload = require('fb-downloader');
+const twitterGetUrl = require('twitter-url-direct');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -8,30 +11,62 @@ const PORT = process.env.PORT || 3000;
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const CHANNEL_ID = process.env.CHANNEL_ID;
 
-// প্ল্যাটফর্ম চিহ্নিত করা (play-dl-এর জন্য)
-function getPlatform(url) {
-  if (/tiktok\.com/.test(url)) return 'tiktok';
-  if (/instagram\.com/.test(url)) return 'instagram';
-  if (/facebook\.com|fb\.watch/.test(url)) return 'facebook';
-  if (/twitter\.com|x\.com/.test(url)) return 'twitter';
-  if (/youtube\.com|youtu\.be/.test(url)) return 'youtube';
-  return null;
+// ---------- ভিডিও URL বের করার নির্ভরযোগ্য ফাংশন ----------
+async function getVideoUrl(url, platform) {
+  switch (platform) {
+    case 'youtube': {
+      // প্রথম চেষ্টা ytdl-core
+      try {
+        const info = await ytdl.getInfo(url);
+        const format = ytdl.chooseFormat(info.formats, { quality: 'highestvideo' });
+        if (format?.url) return format.url;
+      } catch {}
+      // দ্বিতীয় চেষ্টা @distube/ytdl-core
+      try {
+        const distube = require('@distube/ytdl-core');
+        const info2 = await distube.getInfo(url);
+        const format2 = distube.chooseFormat(info2.formats, { quality: 'highestvideo' });
+        if (format2?.url) return format2.url;
+      } catch {}
+      throw new Error('YouTube video not found');
+    }
+
+    case 'instagram': {
+      const data = await instagramGetUrl(url);
+      if (data?.url_list && data.url_list.length > 0) return data.url_list[0];
+      throw new Error('Instagram video not found');
+    }
+
+    case 'facebook': {
+      const data = await fbDownload(url);
+      const vid = data?.hd || data?.sd || data?.url;
+      if (vid) return vid;
+      throw new Error('Facebook video not found');
+    }
+
+    case 'twitter': {
+      const data = await twitterGetUrl(url);
+      if (data?.url) return data.url;
+      throw new Error('Twitter video not found');
+    }
+
+    default:
+      throw new Error('Unsupported platform');
+  }
 }
 
+// ---------- API এন্ডপয়েন্ট ----------
 app.get('/api/download', async (req, res) => {
-  const { url } = req.query;
-  if (!url) return res.status(400).json({ error: 'url required' });
-
-  const platform = getPlatform(url);
-  if (!platform) return res.status(400).json({ error: 'Unsupported platform' });
+  const { url, platform } = req.query;
+  if (!url || !platform) {
+    return res.status(400).json({ error: 'url and platform required' });
+  }
 
   try {
-    // play-dl দিয়ে ভিডিও স্ট্রিম / URL বের করি
-    const streamInfo = await play.stream(url);
-    if (!streamInfo?.url) throw new Error('No stream found');
-    const videoUrl = streamInfo.url;
+    // 1. প্ল্যাটফর্ম থেকে সরাসরি ভিডিও URL নিন
+    const videoUrl = await getVideoUrl(url, platform);
 
-    // টেলিগ্রামে ভিডিও পাঠাই
+    // 2. টেলিগ্রাম চ্যানেলে ভিডিও পাঠান
     const sendRes = await fetch(
       `https://api.telegram.org/bot${BOT_TOKEN}/sendVideo`,
       {
@@ -45,15 +80,16 @@ app.get('/api/download', async (req, res) => {
       }
     );
     const sendData = await sendRes.json();
-    if (!sendData.ok) throw new Error(sendData.description);
+    if (!sendData.ok) throw new Error(sendData.description || 'Telegram sendVideo failed');
 
     const fileId = sendData.result.video.file_id;
 
-    // সরাসরি ডাউনলোড লিংক জেনারেট
+    // 3. সরাসরি ডাউনলোড লিংক তৈরি
     const fileRes = await fetch(
       `https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${fileId}`
     );
     const fileData = await fileRes.json();
+    if (!fileData.ok) throw new Error('getFile failed');
     const filePath = fileData.result.file_path;
     const directUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
 
@@ -63,5 +99,8 @@ app.get('/api/download', async (req, res) => {
     res.status(500).json({ error: 'Download failed: ' + err.message });
   }
 });
+
+// রুট পাথ – যেন "Cannot GET /" না দেখায়
+app.get('/', (req, res) => res.send('Telegram Video API is running. Supports YouTube, Instagram, Facebook, Twitter.'));
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
