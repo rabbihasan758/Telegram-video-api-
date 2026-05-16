@@ -1,6 +1,5 @@
 const express = require('express');
 const fetch = require('node-fetch');
-const cors = require('cors');  // <-- যোগ করা হয়েছে
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -8,10 +7,14 @@ const PORT = process.env.PORT || 3000;
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const CHANNEL_ID = process.env.CHANNEL_ID;
 
-// CORS middleware – সব অরিজিন থেকে রিকোয়েস্ট অনুমোদন
-app.use(cors());
+// ===== CORS HEADER সেট (সব রিকোয়েস্টের জন্য) =====
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  next();
+});
 
-// ---------- প্রতিটি প্ল্যাটফর্মের জন্য পাবলিক API ব্যবহার করে ভিডিও URL আনা ----------
+// ---------- প্ল্যাটফর্মভিত্তিক ভিডিও URL আনা (আগের মতোই) ----------
 async function getVideoUrl(url, platform) {
   const apis = {
     tiktok: [
