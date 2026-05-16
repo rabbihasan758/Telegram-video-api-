@@ -1,15 +1,19 @@
 {
-  "name": "video-api",
-  "version": "1.0.0",
+  "name": "telegram-video-api",
+  "version": "3.0.0",
   "engines": {
-    "node": ">=18.0.0"
+    "node": "18.x"
   },
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "express": "^4.21.0",
-    "node-fetch": "^2.7.0",
-    "play-dl": "^1.9.7"
+    "express": "4.21.0",
+    "node-fetch": "2.7.0",
+    "ytdl-core": "4.11.5",
+    "@distube/ytdl-core": "4.13.5",
+    "instagram-url-direct": "1.0.3",
+    "fb-downloader": "1.0.5",
+    "twitter-url-direct": "1.0.1"
   }
 }
